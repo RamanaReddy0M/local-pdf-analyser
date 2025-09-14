@@ -4,6 +4,7 @@ import PyPDF2
 from typing import List, Dict, Optional
 from pathlib import Path
 import logging
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -22,22 +23,32 @@ class PDFParser:
             pdf_path: Path to the PDF file
             
         Returns:
-            Dictionary containing extracted text and metadata
+            Dictionary containing extracted text and metadata with timing information
         """
+        start_time = time.time()
+        
         try:
             pdf_path = Path(pdf_path)
             if not pdf_path.exists():
                 raise FileNotFoundError(f"PDF file not found: {pdf_path}")
             
+            file_open_time = time.time()
+            
             with open(pdf_path, 'rb') as file:
                 pdf_reader = PyPDF2.PdfReader(file)
+                
+                reader_init_time = time.time()
                 
                 # Extract metadata
                 metadata = pdf_reader.metadata or {}
                 
+                metadata_time = time.time()
+                
                 # Extract text from pages
                 text_content = []
                 page_count = min(len(pdf_reader.pages), self.max_pages)
+                
+                page_extraction_start = time.time()
                 
                 for page_num in range(page_count):
                     page = pdf_reader.pages[page_num]
@@ -48,8 +59,14 @@ class PDFParser:
                             'text': text.strip()
                         })
                 
+                page_extraction_end = time.time()
+                
                 # Combine all text
                 full_text = "\n\n".join([page['text'] for page in text_content])
+                
+                text_processing_time = time.time()
+                
+                total_time = text_processing_time - start_time
                 
                 return {
                     'full_text': full_text,
@@ -57,7 +74,16 @@ class PDFParser:
                     'metadata': metadata,
                     'page_count': page_count,
                     'file_name': pdf_path.name,
-                    'file_size': pdf_path.stat().st_size
+                    'file_size': pdf_path.stat().st_size,
+                    'timing': {
+                        'total_extraction_time': total_time,
+                        'file_open_time': file_open_time - start_time,
+                        'reader_init_time': reader_init_time - file_open_time,
+                        'metadata_extraction_time': metadata_time - reader_init_time,
+                        'page_extraction_time': page_extraction_end - page_extraction_start,
+                        'text_processing_time': text_processing_time - page_extraction_end,
+                        'pages_per_second': page_count / (page_extraction_end - page_extraction_start) if (page_extraction_end - page_extraction_start) > 0 else 0
+                    }
                 }
             
         except Exception as e:

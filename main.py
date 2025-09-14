@@ -8,6 +8,7 @@ from rich.panel import Panel
 from rich.text import Text
 from rich.prompt import Prompt
 from rich.table import Table
+from rich.columns import Columns
 
 from resume_analyzer import DocumentAnalyzer
 from config import settings
@@ -19,6 +20,163 @@ logging.basicConfig(
 )
 
 console = Console()
+
+
+def format_time(seconds: float) -> str:
+    """Format time in seconds to human readable format."""
+    if seconds < 1:
+        return f"{seconds*1000:.1f}ms"
+    elif seconds < 60:
+        return f"{seconds:.2f}s"
+    else:
+        minutes = int(seconds // 60)
+        secs = seconds % 60
+        return f"{minutes}m {secs:.1f}s"
+
+
+def display_timing_info(timing_data: dict, title: str = "Performance Analysis"):
+    """Display comprehensive timing information."""
+    if not timing_data:
+        return
+    
+    console.print(f"\n[bold cyan]{title}[/bold cyan]")
+    
+    # Create timing table
+    timing_table = Table(show_header=True, header_style="bold magenta")
+    timing_table.add_column("Operation", style="cyan", no_wrap=True)
+    timing_table.add_column("Time", justify="right", style="green")
+    timing_table.add_column("Details", style="dim")
+    
+    # Overall timing
+    if 'total_analysis_time' in timing_data:
+        timing_table.add_row(
+            "Total Analysis",
+            format_time(timing_data['total_analysis_time']),
+            "Complete document processing"
+        )
+    
+    if 'total_question_time' in timing_data:
+        timing_table.add_row(
+            "Question Answering",
+            format_time(timing_data['total_question_time']),
+            "LLM response time"
+        )
+    
+    if 'total_answer_time' in timing_data:
+        timing_table.add_row(
+            "Question Answering",
+            format_time(timing_data['total_answer_time']),
+            "LLM response time"
+        )
+    
+    # PDF extraction timing
+    if 'pdf_extraction_time' in timing_data:
+        timing_table.add_row(
+            "PDF Extraction",
+            format_time(timing_data['pdf_extraction_time']),
+            "Text extraction from PDF"
+        )
+    
+    # LLM timing
+    if 'llm_extraction_time' in timing_data:
+        timing_table.add_row(
+            "LLM Data Extraction",
+            format_time(timing_data['llm_extraction_time']),
+            "Structured data extraction"
+        )
+    
+    if 'model_check_time' in timing_data:
+        timing_table.add_row(
+            "Model Check",
+            format_time(timing_data['model_check_time']),
+            "Ollama model availability"
+        )
+    
+    # Detailed PDF timing
+    pdf_timing = timing_data.get('pdf_timing', {})
+    if pdf_timing:
+        timing_table.add_row("", "", "")  # Separator
+        timing_table.add_row(
+            "  File Open",
+            format_time(pdf_timing.get('file_open_time', 0)),
+            "PDF file access"
+        )
+        timing_table.add_row(
+            "  Reader Init",
+            format_time(pdf_timing.get('reader_init_time', 0)),
+            "PyPDF2 initialization"
+        )
+        timing_table.add_row(
+            "  Page Extraction",
+            format_time(pdf_timing.get('page_extraction_time', 0)),
+            f"Processing {pdf_timing.get('pages_per_second', 0):.1f} pages/sec"
+        )
+        timing_table.add_row(
+            "  Text Processing",
+            format_time(pdf_timing.get('text_processing_time', 0)),
+            "Text concatenation"
+        )
+    
+    # Detailed LLM timing
+    llm_timing = timing_data.get('llm_timing', {})
+    if llm_timing:
+        timing_table.add_row("", "", "")  # Separator
+        
+        # Show prompt preparation time
+        if 'prompt_preparation_time' in llm_timing:
+            timing_table.add_row(
+                "  Prompt Prep",
+                format_time(llm_timing.get('prompt_preparation_time', 0)),
+                "Prompt formatting"
+            )
+        
+        timing_table.add_row(
+            "  LLM Request",
+            format_time(llm_timing.get('llm_request_time', 0)),
+            f"Model: {llm_timing.get('tokens_per_second', 0):.1f} tokens/sec"
+        )
+        
+        # Show text lengths
+        if 'text_length' in llm_timing:
+            timing_table.add_row(
+                "  Input Text",
+                f"{llm_timing['text_length']:,} chars",
+                "Document text length"
+            )
+        if 'prompt_length' in llm_timing:
+            timing_table.add_row(
+                "  Prompt",
+                f"{llm_timing['prompt_length']:,} chars",
+                "Formatted prompt length"
+            )
+        if 'response_length' in llm_timing:
+            timing_table.add_row(
+                "  Response",
+                f"{llm_timing['response_length']:,} chars",
+                "LLM response length"
+            )
+        
+        # Show question-specific details
+        if 'question_length' in llm_timing:
+            timing_table.add_row(
+                "  Question",
+                f"{llm_timing['question_length']:,} chars",
+                "Question text length"
+            )
+        if 'context_length' in llm_timing:
+            timing_table.add_row(
+                "  Context",
+                f"{llm_timing['context_length']:,} chars",
+                "Context data length"
+            )
+        if 'answer_length' in llm_timing:
+            timing_table.add_row(
+                "  Answer",
+                f"{llm_timing['answer_length']:,} chars",
+                "Answer text length"
+            )
+    
+    console.print(timing_table)
 
 
 @click.command()
@@ -59,6 +217,10 @@ def main(pdf: str, document_type: str, interactive: bool, question: str):
             console.print(f"[dim]File size: {pdf_data['file_size']:,} bytes[/dim]")
             console.print(f"[dim]Document type: {document_type}[/dim]")
             
+            # Display timing information
+            if 'timing' in result:
+                display_timing_info(result['timing'], "Document Analysis Performance")
+            
             # Show structured data if available
             if result.get('structured_data'):
                 console.print(f"\n[bold]Extracted Information:[/bold]")
@@ -71,6 +233,10 @@ def main(pdf: str, document_type: str, interactive: bool, question: str):
                 
                 if answer_result['success']:
                     console.print(Panel(answer_result['answer'], title="Answer"))
+                    
+                    # Display question timing
+                    if 'timing' in answer_result:
+                        display_timing_info(answer_result['timing'], "Question Answering Performance")
                 else:
                     console.print(f"[red]Error: {answer_result['error']}[/red]")
             
@@ -140,6 +306,10 @@ def start_interactive_mode(analyzer: DocumentAnalyzer):
             
             if result['success']:
                 console.print(Panel(result['answer'], title="Answer"))
+                
+                # Display timing for interactive questions
+                if 'timing' in result:
+                    display_timing_info(result['timing'], "Question Performance")
             else:
                 console.print(f"[red]Error: {result['error']}[/red]")
                 

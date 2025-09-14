@@ -3,6 +3,7 @@
 import ollama
 from typing import List, Dict, Optional
 import logging
+import time
 from config import settings
 
 logger = logging.getLogger(__name__)
@@ -25,8 +26,10 @@ class LLMClient:
             document_type: Type of document (contract, resume, report, etc.)
             
         Returns:
-            Dictionary with extracted document data
+            Dictionary with extracted document data and timing information
         """
+        start_time = time.time()
+        
         # Define extraction patterns based on document type
         extraction_patterns = {
             "contract": """
@@ -45,7 +48,7 @@ class LLMClient:
             - summary: Brief overview of the contract
             
             Document text:
-            {text[:4000]}  # Limit context for contracts (usually longer)
+            {text_placeholder}
             
             Please provide a structured response focusing on the most important contract elements.
             """,
@@ -64,7 +67,7 @@ class LLMClient:
             - summary: Brief professional summary
             
             Document text:
-            {text[:3000]}  # Limit to first 3000 chars for context
+            {text_placeholder}
             
             Please provide a structured response focusing on the most important information.
             """,
@@ -82,22 +85,26 @@ class LLMClient:
             - summary: Brief overview of the document content
             
             Document text:
-            {text[:3500]}  # Limit context for generic documents
+            {text_placeholder}
             
             Please provide a structured response focusing on the most important information.
             """
         }
+        
+        prompt_prep_start = time.time()
         
         # Get appropriate prompt based on document type
         prompt_template = extraction_patterns.get(document_type.lower(), extraction_patterns["generic"])
         
         # Format the prompt with the actual text content
         if document_type.lower() == "contract":
-            prompt = prompt_template.replace("{text[:4000]}", text[:4000])
+            prompt = prompt_template.replace("{text_placeholder}", text[:4000])
         elif document_type.lower() == "resume":
-            prompt = prompt_template.replace("{text[:3000]}", text[:3000])
+            prompt = prompt_template.replace("{text_placeholder}", text[:3000])
         else:  # generic
-            prompt = prompt_template.replace("{text[:3500]}", text[:3500])
+            prompt = prompt_template.replace("{text_placeholder}", text[:3500])
+        
+        prompt_prep_end = time.time()
         
         # Define system messages based on document type
         system_messages = {
@@ -107,6 +114,8 @@ class LLMClient:
         }
         
         system_message = system_messages.get(document_type.lower(), system_messages["generic"])
+        
+        llm_request_start = time.time()
         
         try:
             response = self.client.chat(
@@ -123,20 +132,44 @@ class LLMClient:
                 ]
             )
             
+            llm_request_end = time.time()
+            total_time = llm_request_end - start_time
+            
             return {
                 'success': True,
                 'data': response['message']['content'],
                 'model': self.model,
-                'document_type': document_type
+                'document_type': document_type,
+                'timing': {
+                    'total_extraction_time': total_time,
+                    'prompt_preparation_time': prompt_prep_end - prompt_prep_start,
+                    'llm_request_time': llm_request_end - llm_request_start,
+                    'text_length': len(text),
+                    'prompt_length': len(prompt),
+                    'response_length': len(response['message']['content']),
+                    'tokens_per_second': len(response['message']['content']) / (llm_request_end - llm_request_start) if (llm_request_end - llm_request_start) > 0 else 0
+                }
             }
             
         except Exception as e:
+            error_time = time.time()
+            total_time = error_time - start_time
+            
             logger.error(f"Error extracting document data: {str(e)}")
             return {
                 'success': False,
                 'error': str(e),
                 'data': None,
-                'document_type': document_type
+                'document_type': document_type,
+                'timing': {
+                    'total_extraction_time': total_time,
+                    'prompt_preparation_time': prompt_prep_end - prompt_prep_start,
+                    'llm_request_time': 0,
+                    'text_length': len(text),
+                    'prompt_length': len(prompt),
+                    'response_length': 0,
+                    'tokens_per_second': 0
+                }
             }
     
     def answer_question(self, question: str, document_data: str, document_type: str = "generic") -> Dict[str, any]:
@@ -149,8 +182,10 @@ class LLMClient:
             document_type: Type of document (contract, resume, etc.)
             
         Returns:
-            Dictionary with answer and metadata
+            Dictionary with answer and metadata including timing information
         """
+        start_time = time.time()
+        
         # Define context-aware prompts based on document type
         context_prompts = {
             "contract": f"""
@@ -196,7 +231,11 @@ class LLMClient:
             """
         }
         
+        prompt_prep_start = time.time()
+        
         prompt = context_prompts.get(document_type.lower(), context_prompts["generic"])
+        
+        prompt_prep_end = time.time()
         
         # Define system messages based on document type
         system_messages = {
@@ -206,6 +245,8 @@ class LLMClient:
         }
         
         system_message = system_messages.get(document_type.lower(), system_messages["generic"])
+        
+        llm_request_start = time.time()
         
         try:
             response = self.client.chat(
@@ -222,21 +263,47 @@ class LLMClient:
                 ]
             )
             
+            llm_request_end = time.time()
+            total_time = llm_request_end - start_time
+            
             return {
                 'success': True,
                 'answer': response['message']['content'],
                 'question': question,
                 'model': self.model,
-                'document_type': document_type
+                'document_type': document_type,
+                'timing': {
+                    'total_answer_time': total_time,
+                    'prompt_preparation_time': prompt_prep_end - prompt_prep_start,
+                    'llm_request_time': llm_request_end - llm_request_start,
+                    'question_length': len(question),
+                    'context_length': len(document_data),
+                    'prompt_length': len(prompt),
+                    'answer_length': len(response['message']['content']),
+                    'tokens_per_second': len(response['message']['content']) / (llm_request_end - llm_request_start) if (llm_request_end - llm_request_start) > 0 else 0
+                }
             }
             
         except Exception as e:
+            error_time = time.time()
+            total_time = error_time - start_time
+            
             logger.error(f"Error answering question: {str(e)}")
             return {
                 'success': False,
                 'error': str(e),
                 'answer': None,
-                'document_type': document_type
+                'document_type': document_type,
+                'timing': {
+                    'total_answer_time': total_time,
+                    'prompt_preparation_time': prompt_prep_end - prompt_prep_start,
+                    'llm_request_time': 0,
+                    'question_length': len(question),
+                    'context_length': len(document_data),
+                    'prompt_length': len(prompt),
+                    'answer_length': 0,
+                    'tokens_per_second': 0
+                }
             }
     
     def check_model_availability(self) -> bool:
