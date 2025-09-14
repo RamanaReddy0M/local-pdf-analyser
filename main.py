@@ -67,23 +67,34 @@ def display_timing_info(timing_data: dict, title: str = "Performance Analysis"):
             f"{timing_data['model_check_time']:.3f}s"
         )
     
-    # Total analysis time
+    # Document processing time (PDF + LLM + Model Check)
     if 'total_analysis_time' in timing_data:
         timing_table.add_row(
-            "Total Analysis",
+            "Document Processing",
             f"{timing_data['total_analysis_time']:.3f}s"
         )
     
     # Question answering time
+    question_time = 0
     if 'total_question_time' in timing_data:
+        question_time = timing_data['total_question_time']
         timing_table.add_row(
             "Question Answering",
-            f"{timing_data['total_question_time']:.3f}s"
+            f"{question_time:.3f}s"
         )
     elif 'total_answer_time' in timing_data:
+        question_time = timing_data['total_answer_time']
         timing_table.add_row(
             "Question Answering",
-            f"{timing_data['total_answer_time']:.3f}s"
+            f"{question_time:.3f}s"
+        )
+    
+    # Total processing time (Document Processing + Question Answering)
+    if 'total_analysis_time' in timing_data and question_time > 0:
+        total_time = timing_data['total_analysis_time'] + question_time
+        timing_table.add_row(
+            "Total Processing",
+            f"{total_time:.3f}s"
         )
     
     console.print(timing_table)
